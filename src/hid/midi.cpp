@@ -14,5 +14,7 @@ MidiUartTransport::Config::Config()
     tx             = {DSY_GPIOB, 6};
     rx_buffer      = default_midi_rx_buffer;
     rx_buffer_size = kDefaultMidiRxBufferSize;
+    rx_dma_stream  = UartHandler::Config::DmaStream::DMA_1_STREAM_5;
+    tx_dma_stream  = UartHandler::Config::DmaStream::DMA_2_STREAM_4;
 }
 } // namespace daisy

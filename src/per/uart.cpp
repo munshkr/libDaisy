@@ -24,6 +24,43 @@ static void Error_Handler()
     while(1) {}
 }
 
+
+static DMA_Stream_TypeDef*
+GetDmaStream(const UartHandler::Config::DmaStream& stream)
+{
+    switch(stream)
+    {
+        case UartHandler::Config::DmaStream::DMA_1_STREAM_5:
+            return DMA1_Stream5;
+        case UartHandler::Config::DmaStream::DMA_1_STREAM_7:
+            return DMA1_Stream7;
+        case UartHandler::Config::DmaStream::DMA_2_STREAM_4:
+            return DMA2_Stream4;
+        case UartHandler::Config::DmaStream::DMA_2_STREAM_5:
+            return DMA2_Stream5;
+        case UartHandler::Config::DmaStream::DMA_2_STREAM_6:
+            return DMA2_Stream6;
+        case UartHandler::Config::DmaStream::DMA_2_STREAM_7:
+            return DMA2_Stream7;
+    }
+    return nullptr;
+}
+
+static DMA_TypeDef*
+GetDmaFromDmaStream(const UartHandler::Config::DmaStream& stream)
+{
+    switch(stream)
+    {
+        case UartHandler::Config::DmaStream::DMA_1_STREAM_5:
+        case UartHandler::Config::DmaStream::DMA_1_STREAM_7: return DMA1;
+        case UartHandler::Config::DmaStream::DMA_2_STREAM_4:
+        case UartHandler::Config::DmaStream::DMA_2_STREAM_5:
+        case UartHandler::Config::DmaStream::DMA_2_STREAM_6:
+        case UartHandler::Config::DmaStream::DMA_2_STREAM_7: return DMA2;
+    }
+    return nullptr;
+}
+
 class UartHandler::Impl
 {
   public:
@@ -331,7 +368,7 @@ UartHandler::Result UartHandler::Impl::SetDmaPeripheral()
 
 UartHandler::Result UartHandler::Impl::InitDma(bool rx, bool tx)
 {
-    hdma_rx_.Instance                 = DMA1_Stream5;
+    hdma_rx_.Instance                 = GetDmaStream(config_.rx_dma_stream);
     hdma_rx_.Init.PeriphInc           = DMA_PINC_DISABLE;
     hdma_rx_.Init.MemInc              = DMA_MINC_ENABLE;
     hdma_rx_.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
@@ -341,7 +378,7 @@ UartHandler::Result UartHandler::Impl::InitDma(bool rx, bool tx)
     hdma_rx_.Init.FIFOMode            = DMA_FIFOMODE_DISABLE;
     hdma_rx_.Init.Direction           = DMA_PERIPH_TO_MEMORY;
 
-    hdma_tx_.Instance                 = DMA2_Stream4;
+    hdma_tx_.Instance                 = GetDmaStream(config_.tx_dma_stream);
     hdma_tx_.Init.PeriphInc           = DMA_PINC_DISABLE;
     hdma_tx_.Init.MemInc              = DMA_MINC_ENABLE;
     hdma_tx_.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
@@ -508,7 +545,7 @@ UartHandler::Impl::DmaListenStart(uint8_t* buff,
     /** Initialize DMA Rx i
      *  TODO: Update when dynamic DMA Stream acquisition is added
      */
-    hdma_rx_.Instance                 = DMA1_Stream5;
+    hdma_rx_.Instance                 = GetDmaStream(config_.rx_dma_stream);
     hdma_rx_.Init.PeriphInc           = DMA_PINC_DISABLE;
     hdma_rx_.Init.MemInc              = DMA_MINC_ENABLE;
     hdma_rx_.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
@@ -981,7 +1018,9 @@ static void UART_CheckRxListener(UartHandler::Impl* handle)
      */
     uint8_t* buffer = handle->circular_rx_buff_;
     pos             = handle->circular_rx_total_size_
-          - LL_DMA_GetDataLength(DMA1, LL_DMA_STREAM_5);
+          - LL_DMA_GetDataLength(
+              GetDmaFromDmaStream(handle->GetConfig().rx_dma_stream),
+              __LL_DMA_GET_STREAM(handle->hdma_rx_.Instance));
     if(handle->circular_rx_callback_ && pos != old_pos)
     {
         if(pos > old_pos)
@@ -1054,29 +1093,32 @@ extern "C"
     void LPUART1_IRQHandler() { UART_IRQHandler(&uart_handles[8]); }
 }
 
-void HalUartDmaRxStreamCallback(void)
+void HalUartDmaStreamCallback(DMA_Stream_TypeDef* stream)
 {
     ScopedIrqBlocker block;
     if(UartHandler::Impl::dma_active_peripheral_ >= 0)
-        HAL_DMA_IRQHandler(
-            &uart_handles[UartHandler::Impl::dma_active_peripheral_].hdma_rx_);
-}
-extern "C" void DMA1_Stream5_IRQHandler(void)
-{
-    HalUartDmaRxStreamCallback();
+    {
+        UartHandler::Impl& uart_handle
+            = uart_handles[UartHandler::Impl::dma_active_peripheral_];
+        if(stream == uart_handle.hdma_tx_.Instance)
+            HAL_DMA_IRQHandler(&uart_handle.hdma_tx_);
+        else if(stream == uart_handle.hdma_rx_.Instance)
+            HAL_DMA_IRQHandler(&uart_handle.hdma_rx_);
+    }
 }
 
-void HalUartDmaTxStreamCallback(void)
-{
-    ScopedIrqBlocker block;
-    if(UartHandler::Impl::dma_active_peripheral_ >= 0)
-        HAL_DMA_IRQHandler(
-            &uart_handles[UartHandler::Impl::dma_active_peripheral_].hdma_tx_);
-}
-extern "C" void DMA2_Stream4_IRQHandler(void)
-{
-    HalUartDmaTxStreamCallback();
-}
+#define DEFINE_DMA_STREAM_IRQ_HANDLER(DMA_STREAM) \
+    extern "C" void DMA_STREAM##_IRQHandler(void) \
+    {                                             \
+        HalUartDmaStreamCallback(DMA_STREAM);     \
+    }
+
+DEFINE_DMA_STREAM_IRQ_HANDLER(DMA1_Stream5);
+DEFINE_DMA_STREAM_IRQ_HANDLER(DMA1_Stream7);
+DEFINE_DMA_STREAM_IRQ_HANDLER(DMA2_Stream4);
+DEFINE_DMA_STREAM_IRQ_HANDLER(DMA2_Stream5);
+DEFINE_DMA_STREAM_IRQ_HANDLER(DMA2_Stream6);
+DEFINE_DMA_STREAM_IRQ_HANDLER(DMA2_Stream7);
 
 extern "C" void HAL_UART_TxCpltCallback(UART_HandleTypeDef* huart)
 {

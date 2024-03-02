@@ -55,6 +55,9 @@ class MidiUartTransport
          */
         size_t rx_buffer_size;
 
+        UartHandler::Config::DmaStream rx_dma_stream;
+        UartHandler::Config::DmaStream tx_dma_stream;
+
         Config();
     };
 
@@ -74,6 +77,8 @@ class MidiUartTransport
         uart_config.periph        = config.periph;
         uart_config.pin_config.rx = config.rx;
         uart_config.pin_config.tx = config.tx;
+        uart_config.rx_dma_stream = config.rx_dma_stream;
+        uart_config.tx_dma_stream = config.tx_dma_stream;
 
         rx_buffer      = config.rx_buffer;
         rx_buffer_size = config.rx_buffer_size;

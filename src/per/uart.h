@@ -67,6 +67,16 @@ class UartHandler
             BITS_9,
         };
 
+        enum class DmaStream
+        { // Available DMA streams for UART (see sys/dma.c)
+            DMA_1_STREAM_5,
+            DMA_1_STREAM_7,
+            DMA_2_STREAM_4,
+            DMA_2_STREAM_5,
+            DMA_2_STREAM_6,
+            DMA_2_STREAM_7,
+        };
+
         struct
         {
             dsy_gpio_pin tx; /**< & */
@@ -76,10 +86,12 @@ class UartHandler
         Config()
         {
             // user must init periph, pin_config, and mode
-            stopbits   = StopBits::BITS_1;
-            parity     = Parity::NONE;
-            wordlength = WordLength::BITS_8;
-            baudrate   = 31250;
+            stopbits      = StopBits::BITS_1;
+            parity        = Parity::NONE;
+            wordlength    = WordLength::BITS_8;
+            baudrate      = 31250;
+            rx_dma_stream = DmaStream::DMA_1_STREAM_5;
+            tx_dma_stream = DmaStream::DMA_2_STREAM_4;
         }
 
         Peripheral periph;
@@ -88,8 +100,9 @@ class UartHandler
         Mode       mode;
         WordLength wordlength;
         uint32_t   baudrate;
+        DmaStream  rx_dma_stream;
+        DmaStream  tx_dma_stream;
     };
-
 
     UartHandler() : pimpl_(nullptr) {}
     UartHandler(const UartHandler& other) = default;
@@ -222,7 +235,7 @@ class UartHandler
 
   private:
     Impl* pimpl_;
-};
+}; // namespace daisy
 
 extern "C"
 {

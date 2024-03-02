@@ -48,6 +48,16 @@ extern "C"
         HAL_NVIC_EnableIRQ(DMA2_Stream2_IRQn);
         HAL_NVIC_SetPriority(DMA2_Stream3_IRQn, 0, 0);
         HAL_NVIC_EnableIRQ(DMA2_Stream3_IRQn);
+
+        // Remaining DMA Streams reserved for UART (see per/uart.cpp)
+        HAL_NVIC_SetPriority(DMA1_Stream7_IRQn, 0, 0);
+        HAL_NVIC_EnableIRQ(DMA1_Stream7_IRQn);
+        HAL_NVIC_SetPriority(DMA2_Stream5_IRQn, 0, 0);
+        HAL_NVIC_EnableIRQ(DMA2_Stream5_IRQn);
+        HAL_NVIC_SetPriority(DMA2_Stream6_IRQn, 0, 0);
+        HAL_NVIC_EnableIRQ(DMA2_Stream6_IRQn);
+        HAL_NVIC_SetPriority(DMA2_Stream7_IRQn, 0, 0);
+        HAL_NVIC_EnableIRQ(DMA2_Stream7_IRQn);
     }
 
     void dsy_dma_deinit(void)
