@@ -1098,12 +1098,22 @@ void HalUartDmaStreamCallback(DMA_Stream_TypeDef* stream)
     ScopedIrqBlocker block;
     if(UartHandler::Impl::dma_active_peripheral_ >= 0)
     {
-        UartHandler::Impl& uart_handle
-            = uart_handles[UartHandler::Impl::dma_active_peripheral_];
-        if(stream == uart_handle.hdma_tx_.Instance)
-            HAL_DMA_IRQHandler(&uart_handle.hdma_tx_);
-        else if(stream == uart_handle.hdma_rx_.Instance)
-            HAL_DMA_IRQHandler(&uart_handle.hdma_rx_);
+        // Get uart_handle from uart_handles by comparing `stream`
+        // with hdma_rx_ and hdma_tx_
+        for(int i = 0; i < 9; i++)
+        {
+            UartHandler::Impl& uart_handle = uart_handles[i];
+            if(stream == uart_handle.hdma_rx_.Instance)
+            {
+                HAL_DMA_IRQHandler(&uart_handle.hdma_rx_);
+                return;
+            }
+            else if(stream == uart_handle.hdma_tx_.Instance)
+            {
+                HAL_DMA_IRQHandler(&uart_handle.hdma_tx_);
+                return;
+            }
+        }
     }
 }
 
