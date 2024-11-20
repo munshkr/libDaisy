@@ -69,7 +69,7 @@ static void Error_Handler()
 // Static References for available SaiHandle::Impls
 // ================================================================
 
-static SaiHandle::Impl sai_handles[2];
+static SaiHandle::Impl sai_handles[1];
 
 // ================================================================
 // SAI Functions
@@ -156,19 +156,19 @@ SaiHandle::Result SaiHandle::Impl::Init(const SaiHandle::Config& config)
     uint32_t protocol;
     switch(config.bit_depth)
     {
-        case Config::BitDepth::SAI_16BIT:
-            bd       = SAI_PROTOCOL_DATASIZE_16BIT;
-            protocol = SAI_I2S_STANDARD;
-            break;
+        // case Config::BitDepth::SAI_16BIT:
+        //     bd       = SAI_PROTOCOL_DATASIZE_16BIT;
+        //     protocol = SAI_I2S_STANDARD;
+        //     break;
         case Config::BitDepth::SAI_24BIT:
             bd       = SAI_PROTOCOL_DATASIZE_24BIT;
             protocol = SAI_I2S_MSBJUSTIFIED;
             break;
-        case Config::BitDepth::SAI_32BIT:
-            // Untested Configuration
-            bd       = SAI_PROTOCOL_DATASIZE_32BIT;
-            protocol = SAI_I2S_STANDARD;
-            break;
+        // case Config::BitDepth::SAI_32BIT:
+        //     // Untested Configuration
+        //     bd       = SAI_PROTOCOL_DATASIZE_32BIT;
+        //     protocol = SAI_I2S_STANDARD;
+        //     break;
         default: break;
     }
 
@@ -453,18 +453,18 @@ extern "C" void HAL_SAI_MspInit(SAI_HandleTypeDef* hsai)
                                    ? SaiHandle::Impl::PeripheralBlock::BLOCK_A
                                    : SaiHandle::Impl::PeripheralBlock::BLOCK_B);
     }
-    else if(hsai->Instance == SAI2_Block_A || hsai->Instance == SAI2_Block_B)
-    {
-        __HAL_RCC_GPIOA_CLK_ENABLE();
-        __HAL_RCC_GPIOD_CLK_ENABLE();
-        __HAL_RCC_GPIOG_CLK_ENABLE();
-        __HAL_RCC_SAI2_CLK_ENABLE();
-        sai_handles[1].InitPins();
-        __HAL_RCC_DMA1_CLK_ENABLE();
-        sai_handles[1].InitDma(hsai->Instance == SAI2_Block_A
-                                   ? SaiHandle::Impl::PeripheralBlock::BLOCK_A
-                                   : SaiHandle::Impl::PeripheralBlock::BLOCK_B);
-    }
+    // else if(hsai->Instance == SAI2_Block_A || hsai->Instance == SAI2_Block_B)
+    // {
+    //     __HAL_RCC_GPIOA_CLK_ENABLE();
+    //     __HAL_RCC_GPIOD_CLK_ENABLE();
+    //     __HAL_RCC_GPIOG_CLK_ENABLE();
+    //     __HAL_RCC_SAI2_CLK_ENABLE();
+    //     sai_handles[1].InitPins();
+    //     __HAL_RCC_DMA1_CLK_ENABLE();
+    //     sai_handles[1].InitDma(hsai->Instance == SAI2_Block_A
+    //                                ? SaiHandle::Impl::PeripheralBlock::BLOCK_A
+    //                                : SaiHandle::Impl::PeripheralBlock::BLOCK_B);
+    // }
 }
 extern "C" void HAL_SAI_MspDeInit(SAI_HandleTypeDef* hsai)
 {
@@ -473,11 +473,11 @@ extern "C" void HAL_SAI_MspDeInit(SAI_HandleTypeDef* hsai)
         __HAL_RCC_SAI1_CLK_DISABLE();
         sai_handles[0].DeInitPins();
     }
-    else if(hsai->Instance == SAI2_Block_A)
-    {
-        __HAL_RCC_SAI2_CLK_DISABLE();
-        sai_handles[1].DeInitPins();
-    }
+    // else if(hsai->Instance == SAI2_Block_A)
+    // {
+    //     __HAL_RCC_SAI2_CLK_DISABLE();
+    //     sai_handles[1].DeInitPins();
+    // }
 }
 
 // ================================================================
@@ -494,15 +494,15 @@ extern "C" void DMA1_Stream1_IRQHandler(void)
     HAL_DMA_IRQHandler(&sai_handles[0].sai_b_dma_handle_);
 }
 
-extern "C" void DMA1_Stream3_IRQHandler(void)
-{
-    HAL_DMA_IRQHandler(&sai_handles[1].sai_a_dma_handle_);
-}
+// extern "C" void DMA1_Stream3_IRQHandler(void)
+// {
+//     HAL_DMA_IRQHandler(&sai_handles[1].sai_a_dma_handle_);
+// }
 
-extern "C" void DMA1_Stream4_IRQHandler(void)
-{
-    HAL_DMA_IRQHandler(&sai_handles[1].sai_b_dma_handle_);
-}
+// extern "C" void DMA1_Stream4_IRQHandler(void)
+// {
+//     HAL_DMA_IRQHandler(&sai_handles[1].sai_b_dma_handle_);
+// }
 
 extern "C" void HAL_SAI_RxHalfCpltCallback(SAI_HandleTypeDef* hsai)
 {
@@ -511,11 +511,11 @@ extern "C" void HAL_SAI_RxHalfCpltCallback(SAI_HandleTypeDef* hsai)
         sai_handles[0].dma_offset = 0;
         sai_handles[0].InternalCallback(0);
     }
-    else if(hsai->Instance == SAI2_Block_A || hsai->Instance == SAI2_Block_B)
-    {
-        sai_handles[1].dma_offset = 0;
-        sai_handles[1].InternalCallback(0);
-    }
+    // else if(hsai->Instance == SAI2_Block_A || hsai->Instance == SAI2_Block_B)
+    // {
+    //     sai_handles[1].dma_offset = 0;
+    //     sai_handles[1].InternalCallback(0);
+    // }
 }
 
 extern "C" void HAL_SAI_RxCpltCallback(SAI_HandleTypeDef* hsai)
@@ -525,11 +525,11 @@ extern "C" void HAL_SAI_RxCpltCallback(SAI_HandleTypeDef* hsai)
         sai_handles[0].dma_offset = sai_handles[0].buff_size_ / 2;
         sai_handles[0].InternalCallback(sai_handles[0].dma_offset);
     }
-    else if(hsai->Instance == SAI2_Block_A || hsai->Instance == SAI2_Block_B)
-    {
-        sai_handles[1].dma_offset = sai_handles[1].buff_size_ / 2;
-        sai_handles[1].InternalCallback(sai_handles[1].dma_offset);
-    }
+    // else if(hsai->Instance == SAI2_Block_A || hsai->Instance == SAI2_Block_B)
+    // {
+    //     sai_handles[1].dma_offset = sai_handles[1].buff_size_ / 2;
+    //     sai_handles[1].InternalCallback(sai_handles[1].dma_offset);
+    // }
 }
 
 // ================================================================
@@ -538,6 +538,10 @@ extern "C" void HAL_SAI_RxCpltCallback(SAI_HandleTypeDef* hsai)
 
 SaiHandle::Result SaiHandle::Init(const Config& config)
 {
+    // SAI2 disabled on this branch
+    if (int(config.periph) > 0)
+        return SaiHandle::Result::ERR;
+
     pimpl_ = &sai_handles[int(config.periph)];
     return pimpl_->Init(config);
 }
