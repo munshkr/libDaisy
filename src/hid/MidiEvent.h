@@ -1,5 +1,19 @@
-// TODO: make this adjustable
-#define SYSEX_BUFFER_LEN 128
+#pragma once
+
+// This now defines the maximum cumulative length of buffered sysex
+// data per midi parser, in bytes. It can be increased if the application
+// is unable to consume sysex bytes fast enough to keep the buffer from overflowing.
+#define SYSEX_BUF_MAX_SIZE 1024
+
+// This is the max chunk length of sysex data enqueued in each parsed event.
+// The event may not represent all the sysex data in a given transfer.
+// Application must handle streamed parsing of multiple chunks.
+#define SYSEX_BUF_CHUNK_LEN 128
+
+static_assert(SYSEX_BUF_MAX_SIZE % SYSEX_BUF_CHUNK_LEN == 0);
+
+#include <stdint.h>
+#include "util/ringbuffer.h"
 
 namespace daisy
 {
@@ -14,10 +28,78 @@ namespace daisy
  *  @{
 */
 
+/** Simple templated wrapper for consuming sysex bytes
+ * from a shared buffer/fifo without exposing write access.
+ * (via ringbuffer)
+ */
+template <size_t MAX_SIZE = SYSEX_BUF_MAX_SIZE>
+class SysexChunk
+{
+  public:
+    enum Type : uint8_t
+    {
+        Invalid,
+        Complete,
+        First,
+        Intermediate,
+        Last
+    };
+
+    SysexChunk()
+    : type_(Type::Invalid), ringbuf_(nullptr), size_(0), bytes_read_(0)
+    {
+    }
+    SysexChunk(Type type, RingBuffer<uint8_t, MAX_SIZE> *ringbuf, size_t size)
+    : type_(type), ringbuf_(ringbuf), size_(size), bytes_read_(0)
+    {
+    }
+
+    Type   GetType() const { return type_; }
+    size_t GetSize() const { return size_; }
+    size_t GetBytesRemaining() const { return size_ - bytes_read_; }
+
+    /** Consume and return single byte from buffer.
+     * If no more data can be read, returns 0xff */
+    uint8_t ReadByte()
+    {
+        if(!can_read())
+            return 0xff;
+        bytes_read_++;
+        return ringbuf_->ImmediateRead();
+    }
+
+    /** Read up to `size` bytes, returns num bytes read
+     */
+    size_t ReadBytes(uint8_t *buf, size_t size)
+    {
+        if(buf == nullptr)
+            return 0;
+        size_t count = 0;
+        while(can_read() && count < size)
+        {
+            buf[count++] = ringbuf_->ImmediateRead();
+            bytes_read_++;
+        }
+        return count;
+    }
+
+  private:
+    bool can_read() const
+    {
+        return bytes_read_ < size_ && ringbuf_ != nullptr
+               && ringbuf_->readable() > 0;
+    }
+
+    Type                           type_;
+    RingBuffer<uint8_t, MAX_SIZE> *ringbuf_;
+    size_t                         size_;
+    size_t                         bytes_read_;
+};
+
 /** Parsed from the Status Byte, these are the common Midi Messages that can be handled. \n
 At this time only 3-byte messages are correctly parsed into MidiEvents.
 */
-enum MidiMessageType
+enum MidiMessageType : uint8_t
 {
     NoteOff,               /**< & */
     NoteOn,                /**< & */
@@ -32,7 +114,7 @@ enum MidiMessageType
     MessageLast,           /**< & */
 };
 
-enum SystemCommonType
+enum SystemCommonType : uint8_t
 {
     SystemExclusive,     /**< & */
     MTCQuarterFrame,     /**< & */
@@ -45,7 +127,7 @@ enum SystemCommonType
     SystemCommonLast,    /**< & */
 };
 
-enum SystemRealTimeType
+enum SystemRealTimeType : uint8_t
 {
     TimingClock,        /**< & */
     SRTUndefined0,      /**< & */
@@ -58,7 +140,7 @@ enum SystemRealTimeType
     SystemRealTimeLast, /**< & */
 };
 
-enum ChannelModeType
+enum ChannelModeType : uint8_t
 {
     AllSoundOff,         /**< & */
     ResetAllControllers, /**< & */
@@ -71,12 +153,13 @@ enum ChannelModeType
     ChannelModeLast,     /**< & */
 };
 
+
 /** Struct containing note, and velocity data for a given channel.
 Can be made from MidiEvent
 */
 struct NoteOffEvent
 {
-    int     channel;  /**< & */
+    uint8_t channel;  /**< & */
     uint8_t note;     /**< & */
     uint8_t velocity; /**< & */
 };
@@ -87,7 +170,7 @@ Can be made from MidiEvent
 */
 struct NoteOnEvent
 {
-    int     channel;  /**< & */
+    uint8_t channel;  /**< & */
     uint8_t note;     /**< & */
     uint8_t velocity; /**< & */
 };
@@ -96,7 +179,7 @@ Can be made from MidiEvent
 */
 struct PolyphonicKeyPressureEvent
 {
-    int     channel;
+    uint8_t channel;
     uint8_t note;
     uint8_t pressure;
 };
@@ -105,7 +188,7 @@ Can be made from MidiEvent
 */
 struct ControlChangeEvent
 {
-    int     channel;        /**< & */
+    uint8_t channel;        /**< & */
     uint8_t control_number; /**< & */
     uint8_t value;          /**< & */
 };
@@ -114,7 +197,7 @@ Can be made from MidiEvent
 */
 struct ProgramChangeEvent
 {
-    int     channel; /**< & */
+    uint8_t channel; /**< & */
     uint8_t program; /**< & */
 };
 /** Struct containing pressure (aftertouch), for a given channel.
@@ -122,7 +205,7 @@ Can be made from MidiEvent
 */
 struct ChannelPressureEvent
 {
-    int     channel;  /**< & */
+    uint8_t channel;  /**< & */
     uint8_t pressure; /**< & */
 };
 /** Struct containing pitch bend value for a given channel.
@@ -130,7 +213,7 @@ Can be made from MidiEvent
 */
 struct PitchBendEvent
 {
-    int     channel; /**< & */
+    uint8_t channel; /**< & */
     int16_t value;   /**< & */
 };
 /** Struct containing channel mode event for a given channel.
@@ -138,17 +221,17 @@ Can be made from MidiEvent
 */
 struct ChannelModeEvent
 {
-    int             channel;    /**< & */
+    uint8_t         channel;    /**< & */
     ChannelModeType event_type; /**< & */
     int16_t         value;      /**< & */
 };
 /** Struct containing sysex data.
-Can be made from MidiEvent
+  Can be made from MidiEvent
+  @warning Data at pointer only valid during sysex callback!
 */
 struct SystemExclusiveEvent
 {
-    int     length;
-    uint8_t data[SYSEX_BUFFER_LEN]; /**< & */
+    SysexChunk<> chunk;
 };
 /** Struct containing QuarterFrame data.
 Can be made from MidiEvent
@@ -177,14 +260,14 @@ Can be made from MidiEvent
 */
 struct AllSoundOffEvent
 {
-    int channel; /**< & */
+    uint8_t channel; /**< & */
 };
 /** Struct containing ResetAllControllersEvent data.
 Can be made from MidiEvent
 */
 struct ResetAllControllersEvent
 {
-    int     channel; /**< & */
+    uint8_t channel; /**< & */
     uint8_t value;   /**< & */
 };
 /** Struct containing LocalControlEvent data.
@@ -192,37 +275,37 @@ Can be made from MidiEvent
 */
 struct LocalControlEvent
 {
-    int  channel;           /**< & */
-    bool local_control_off; /**< & */
-    bool local_control_on;  /**< & */
+    uint8_t channel;           /**< & */
+    bool    local_control_off; /**< & */
+    bool    local_control_on;  /**< & */
 };
 /** Struct containing AllNotesOffEvent data.
 Can be made from MidiEvent
 */
 struct AllNotesOffEvent
 {
-    int channel; /**< & */
+    uint8_t channel; /**< & */
 };
 /** Struct containing OmniModeOffEvent data.
  * Can be made from MidiEvent
 */
 struct OmniModeOffEvent
 {
-    int channel; /**< & */
+    uint8_t channel; /**< & */
 };
 /** Struct containing OmniModeOnEvent data.
 Can be made from MidiEvent
 */
 struct OmniModeOnEvent
 {
-    int channel; /**< & */
+    uint8_t channel; /**< & */
 };
 /** Struct containing MonoModeOnEvent data.
 Can be made from MidiEvent
 */
 struct MonoModeOnEvent
 {
-    int     channel;      /**< & */
+    uint8_t channel;      /**< & */
     uint8_t num_channels; /**< & */
 };
 /** Struct containing PolyModeOnEvent data.
@@ -230,7 +313,7 @@ Can be made from MidiEvent
 */
 struct PolyModeOnEvent
 {
-    int channel; /**< & */
+    uint8_t channel; /**< & */
 };
 
 
@@ -239,11 +322,10 @@ struct PolyModeOnEvent
 struct MidiEvent
 {
     // Newer ish.
-    MidiMessageType    type;                         /**< & */
-    int                channel;                      /**< & */
-    uint8_t            data[2];                      /**< & */
-    uint8_t            sysex_data[SYSEX_BUFFER_LEN]; /**< & */
-    uint8_t            sysex_message_len;
+    MidiMessageType    type;    /**< & */
+    uint8_t            channel; /**< & */
+    uint8_t            data[2]; /**< & */
+    SysexChunk<>       sysex_chunk;
     SystemCommonType   sc_type;
     SystemRealTimeType srt_type;
     ChannelModeType    cm_type;
@@ -329,17 +411,11 @@ struct MidiEvent
     SystemExclusiveEvent AsSystemExclusive()
     {
         SystemExclusiveEvent m;
-        m.length = sysex_message_len;
-        for(int i = 0; i < SYSEX_BUFFER_LEN; i++)
-        {
-            m.data[i] = 0;
-            if(i < m.length)
-            {
-                m.data[i] = sysex_data[i];
-            }
-        }
+        // value copy is trivial, this is OK
+        m.chunk = sysex_chunk;
         return m;
     }
+
     MTCQuarterFrameEvent AsMTCQuarterFrame()
     {
         MTCQuarterFrameEvent m;

@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include "hid/MidiEvent.h"
+#include "util/ringbuffer.h"
 
 namespace daisy
 {
@@ -15,7 +16,7 @@ namespace daisy
 class MidiParser
 {
   public:
-    MidiParser(){};
+    MidiParser() {};
     ~MidiParser() {}
 
     inline void Init() { Reset(); }
@@ -47,9 +48,15 @@ class MidiParser
         ParserSysEx,
     };
 
-    ParserState     pstate_;
-    MidiEvent       incoming_message_;
-    MidiMessageType running_status_;
+    ParserState                             pstate_;
+    MidiEvent                               incoming_message_;
+    MidiMessageType                         running_status_;
+    RingBuffer<uint8_t, SYSEX_BUF_MAX_SIZE> sysex_buf_;
+    size_t                                  sysex_chunk_len_;
+    size_t                                  sysex_chunk_count_;
+    bool                                    sysex_overflow_;
+
+    void produceSysexChunk(MidiEvent *event_out, bool msg_ended);
 
     // Masks to check for message type, and byte content
     const uint8_t kStatusByteMask     = 0x80;

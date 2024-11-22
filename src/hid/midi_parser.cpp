@@ -37,8 +37,7 @@ bool MidiParser::Parse(uint8_t byte, MidiEvent* event_out)
                         //sysex
                         if(incoming_message_.sc_type == SystemExclusive)
                         {
-                            pstate_                             = ParserSysEx;
-                            incoming_message_.sysex_message_len = 0;
+                            pstate_ = ParserSysEx;
                         }
                         //short circuit
                         else if(incoming_message_.sc_type > SongSelect)
@@ -166,19 +165,37 @@ bool MidiParser::Parse(uint8_t byte, MidiEvent* event_out)
             // end of sysex
             if(byte == 0xf7)
             {
-                pstate_ = ParserEmpty;
-                if(event_out != nullptr)
+                if(sysex_overflow_)
                 {
-                    *event_out = incoming_message_;
+                    sysex_buf_.Flush();
+                    sysex_chunk_len_   = 0;
+                    sysex_chunk_count_ = 0;
+                    sysex_overflow_    = false;
                 }
-                did_parse = true;
+                else
+                {
+                    pstate_ = ParserEmpty;
+                    produceSysexChunk(event_out, true);
+                    did_parse = true;
+                }
             }
-            else if(incoming_message_.sysex_message_len < SYSEX_BUFFER_LEN)
+            else
             {
-                incoming_message_
-                    .sysex_data[incoming_message_.sysex_message_len]
-                    = byte;
-                incoming_message_.sysex_message_len++;
+                if(sysex_buf_.writable() > 0)
+                {
+                    sysex_buf_.Write(byte);
+                    if(sysex_chunk_len_++ >= SYSEX_BUF_CHUNK_LEN)
+                    {
+                        produceSysexChunk(event_out, false);
+                    }
+                }
+                else
+                {
+                    // TODO: this could probably be handled better -
+                    // if client is not consuming bytes fast enough (or at all)
+                    // ignore bytes until end of packet, then purge ringbuf
+                    sysex_overflow_ = true;
+                }
             }
             break;
         default: break;
@@ -189,6 +206,41 @@ bool MidiParser::Parse(uint8_t byte, MidiEvent* event_out)
 
 void MidiParser::Reset()
 {
-    pstate_                = ParserEmpty;
-    incoming_message_.type = MessageLast;
+    pstate_                       = ParserEmpty;
+    sysex_chunk_len_              = 0;
+    sysex_chunk_count_            = 0;
+    sysex_overflow_               = false;
+    incoming_message_.type        = MessageLast;
+    incoming_message_.sysex_chunk = SysexChunk<>();
+}
+
+void MidiParser::produceSysexChunk(MidiEvent* event_out, bool msg_ended)
+{
+    auto type = SysexChunk<>::Type::Intermediate;
+    if(sysex_chunk_count_ == 0)
+    {
+        if(msg_ended)
+        {
+            type = SysexChunk<>::Type::Complete;
+        }
+        else
+        {
+            type = SysexChunk<>::Type::First;
+            sysex_chunk_count_++;
+        }
+    }
+    else if(msg_ended)
+    {
+        sysex_chunk_count_ = 0;
+        type               = SysexChunk<>::Type::Last;
+    }
+
+    if(event_out != nullptr)
+    {
+        *event_out = incoming_message_;
+        event_out->sysex_chunk
+            = SysexChunk<>(type, &sysex_buf_, sysex_chunk_len_);
+    }
+
+    sysex_chunk_len_ = 0;
 }
