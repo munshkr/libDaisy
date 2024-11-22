@@ -108,15 +108,15 @@ class UartHandler::Impl
                       EndCallbackFunctionPtr   end_callback,
                       void*                    callback_context);
 
-    /** Starts the DMA Reception in "Listen" mode. 
-     *  In this mode the DMA is configured for circular 
+    /** Starts the DMA Reception in "Listen" mode.
+     *  In this mode the DMA is configured for circular
      *  behavior, and the IDLE interrupt is enabled.
-     * 
+     *
      *  At TC, HT, and IDLE interrupts data must be processed.
-     * 
+     *
      *  Size must be set so that at maximum bandwidth, the software
      *  has time to process N bytes before the next circular IRQ is fired
-     * 
+     *
      */
     Result DmaListenStart(uint8_t*                      buff,
                           size_t                        size,
@@ -174,7 +174,7 @@ class UartHandler::Impl
     static EndCallbackFunctionPtr next_end_callback_;
     static void*                  next_callback_context_;
 
-    /** Not static -- any UART can use this 
+    /** Not static -- any UART can use this
      *  until we had dynamic DMA stream handling
      *  this will consume the sole DMA stream for UART Rx
      */

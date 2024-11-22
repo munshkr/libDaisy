@@ -181,12 +181,13 @@ bool MidiParser::Parse(uint8_t byte, MidiEvent* event_out)
             }
             else
             {
-                if(sysex_buf_.writable() > 0)
+                if(!sysex_overflow_ && sysex_buf_.writable() > 0)
                 {
                     sysex_buf_.Write(byte);
-                    if(sysex_chunk_len_++ >= SYSEX_BUF_CHUNK_LEN)
+                    if(++sysex_chunk_len_ >= SYSEX_BUF_CHUNK_LEN)
                     {
                         produceSysexChunk(event_out, false);
+                        did_parse = true;
                     }
                 }
                 else
@@ -216,23 +217,27 @@ void MidiParser::Reset()
 
 void MidiParser::produceSysexChunk(MidiEvent* event_out, bool msg_ended)
 {
-    auto type = SysexChunk<>::Type::Intermediate;
+    auto type = SysexChunk<>::Type::SeqIntermediate;
     if(sysex_chunk_count_ == 0)
     {
         if(msg_ended)
         {
-            type = SysexChunk<>::Type::Complete;
+            type = SysexChunk<>::Type::Individual;
         }
         else
         {
-            type = SysexChunk<>::Type::First;
+            type = SysexChunk<>::Type::SeqFirst;
             sysex_chunk_count_++;
         }
     }
     else if(msg_ended)
     {
         sysex_chunk_count_ = 0;
-        type               = SysexChunk<>::Type::Last;
+        type               = SysexChunk<>::Type::SeqLast;
+    }
+    else
+    {
+        sysex_chunk_count_++;
     }
 
     if(event_out != nullptr)

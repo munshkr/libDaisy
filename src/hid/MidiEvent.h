@@ -39,10 +39,10 @@ class SysexChunk
     enum Type : uint8_t
     {
         Invalid,
-        Complete,
-        First,
-        Intermediate,
-        Last
+        Individual,
+        SeqFirst,
+        SeqIntermediate,
+        SeqLast
     };
 
     SysexChunk()
