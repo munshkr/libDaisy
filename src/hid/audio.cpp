@@ -11,7 +11,7 @@ namespace daisy
 // these buffers will always be present, and usable.
 //
 static const size_t kAudioMaxBufferSize = 1024;
-static const size_t kAudioMaxChannels   = 4;
+static const size_t kAudioMaxChannels   = 2;
 
 // Static Global Buffers
 // 8kB in SRAM1, non-cached memory
@@ -31,7 +31,7 @@ class AudioHandle::Impl
     // Interface
     AudioHandle::Result Init(const AudioHandle::Config config, SaiHandle sai);
     AudioHandle::Result
-                        Init(const AudioHandle::Config config, SaiHandle sai1, SaiHandle sai2);
+    Init(const AudioHandle::Config config, SaiHandle sai1, SaiHandle sai2);
     AudioHandle::Result DeInit();
     AudioHandle::Result Start(AudioHandle::AudioCallback callback);
     AudioHandle::Result Start(AudioHandle::InterleavingAudioCallback callback);
@@ -42,9 +42,10 @@ class AudioHandle::Impl
 
     inline size_t GetChannels() const
     {
-        if(sai1_.IsInitialized() && sai2_.IsInitialized())
-            return 4;
-        else if(sai1_.IsInitialized() || sai2_.IsInitialized())
+        // if(sai1_.IsInitialized() && sai2_.IsInitialized())
+        //     return 4;
+        // else
+        if(sai1_.IsInitialized()) // || sai2_.IsInitialized())
             return 2;
         else
             return 0;
@@ -89,7 +90,7 @@ class AudioHandle::Impl
 
     // Data
     AudioHandle::Config config_;
-    SaiHandle           sai1_, sai2_;
+    SaiHandle           sai1_; //, sai2_;
     int32_t*            buff_rx_[2];
     int32_t*            buff_tx_[2];
     float               postgain_recip_;
@@ -139,9 +140,9 @@ AudioHandle::Result AudioHandle::Impl::Init(const AudioHandle::Config config,
                                             SaiHandle                 sai2)
 {
     this->Init(config, sai1);
-    sai2_       = sai2;
-    buff_rx_[1] = dsy_audio_rx_buffer[1];
-    buff_tx_[1] = dsy_audio_tx_buffer[1];
+    // sai2_       = sai2;
+    // buff_rx_[1] = dsy_audio_rx_buffer[1];
+    // buff_tx_[1] = dsy_audio_tx_buffer[1];
     // How do we want to handle the rx/tx buffs for the second peripheral of audio..?
     return Result::OK;
 }
@@ -156,13 +157,13 @@ AudioHandle::Result AudioHandle::Impl::DeInit()
             return Result::ERR;
         }
     }
-    if(sai2_.IsInitialized())
-    {
-        if(sai2_.DeInit() != SaiHandle::Result::OK)
-        {
-            return Result::ERR;
-        }
-    }
+    // if(sai2_.IsInitialized())
+    // {
+    //     if(sai2_.DeInit() != SaiHandle::Result::OK)
+    //     {
+    //         return Result::ERR;
+    //     }
+    // }
     return Result::OK;
 }
 
@@ -170,12 +171,12 @@ AudioHandle::Result
 AudioHandle::Impl::Start(AudioHandle::AudioCallback callback)
 {
     // Get instance of object
-    if(sai2_.IsInitialized())
-    {
-        // Start stream with no callback. Data will be filled externally.
-        sai2_.StartDma(
-            buff_rx_[1], buff_tx_[1], config_.blocksize * 2 * 2, nullptr);
-    }
+    // if(sai2_.IsInitialized())
+    // {
+    //     // Start stream with no callback. Data will be filled externally.
+    //     sai2_.StartDma(
+    //         buff_rx_[1], buff_tx_[1], config_.blocksize * 2 * 2, nullptr);
+    // }
     sai1_.StartDma(buff_rx_[0],
                    buff_tx_[0],
                    config_.blocksize * 2 * 2,
@@ -202,8 +203,8 @@ AudioHandle::Result AudioHandle::Impl::Stop()
 {
     if(sai1_.IsInitialized())
         sai1_.StopDma();
-    if(sai2_.IsInitialized())
-        sai2_.StopDma();
+    // if(sai2_.IsInitialized())
+    //     sai2_.StopDma();
     return Result::OK;
 }
 
@@ -252,17 +253,17 @@ AudioHandle::Impl::SetSampleRate(SaiHandle::Config::SampleRate samplerate)
             return Result::ERR;
         }
     }
-    if(sai2_.IsInitialized())
-    {
-        // Set, and reinit
-        SaiHandle::Config cfg;
-        cfg    = sai2_.GetConfig();
-        cfg.sr = config_.samplerate;
-        if(sai2_.Init(cfg) != SaiHandle::Result::OK)
-        {
-            return Result::ERR;
-        }
-    }
+    // if(sai2_.IsInitialized())
+    // {
+    //     // Set, and reinit
+    //     SaiHandle::Config cfg;
+    //     cfg    = sai2_.GetConfig();
+    //     cfg.sr = config_.samplerate;
+    //     if(sai2_.Init(cfg) != SaiHandle::Result::OK)
+    //     {
+    //         return Result::ERR;
+    //     }
+    // }
     return Result::OK;
 }
 
@@ -276,84 +277,85 @@ void AudioHandle::Impl::InternalCallback(int32_t* in, int32_t* out, size_t size)
 {
     // Convert from sai format to float, and call user callback
     size_t                      chns;
-    SaiHandle::Config::BitDepth bd;
-    bd   = audio_handle.sai1_.GetConfig().bit_depth;
+    // SaiHandle::Config::BitDepth bd;
+    // bd   = audio_handle.sai1_.GetConfig().bit_depth;
     chns = audio_handle.GetChannels();
     if(chns == 0)
         return;
     // Handle Interleaved / Non Interleaved separate
-    if(audio_handle.interleaved_callback_)
-    {
-        InterleavingAudioCallback cb
-            = (InterleavingAudioCallback)audio_handle.interleaved_callback_;
-        float fin[size];
-        float fout[size];
-        // There _must_ be a more elegant way to do this....
-        // Convert from int to float
-        switch(bd)
-        {
-            case SaiHandle::Config::BitDepth::SAI_16BIT:
-                for(size_t i = 0; i < size; i += 2)
-                {
-                    fin[i] = s162f(in[i]) * audio_handle.postgain_recip_;
-                    fin[i + 1]
-                        = s162f(in[i + 1]) * audio_handle.postgain_recip_;
-                }
-                break;
-            case SaiHandle::Config::BitDepth::SAI_24BIT:
-                for(size_t i = 0; i < size; i += 2)
-                {
-                    fin[i] = s242f(in[i]) * audio_handle.postgain_recip_;
-                    fin[i + 1]
-                        = s242f(in[i + 1]) * audio_handle.postgain_recip_;
-                }
-                break;
-            case SaiHandle::Config::BitDepth::SAI_32BIT:
-                for(size_t i = 0; i < size; i += 2)
-                {
-                    fin[i] = s322f(in[i]) * audio_handle.postgain_recip_;
-                    fin[i + 1]
-                        = s322f(in[i + 1]) * audio_handle.postgain_recip_;
-                }
-                break;
-            default: break;
-        }
-        cb(fin, fout, size);
-        switch(bd)
-        {
-            case SaiHandle::Config::BitDepth::SAI_16BIT:
-                for(size_t i = 0; i < size; i += 2)
-                {
-                    out[i] = f2s16(fout[i] * audio_handle.output_adjust_);
-                    out[i + 1]
-                        = f2s16(fout[i + 1] * audio_handle.output_adjust_);
-                }
-                break;
-            case SaiHandle::Config::BitDepth::SAI_24BIT:
-                for(size_t i = 0; i < size; i += 2)
-                {
-                    out[i] = f2s24(fout[i] * audio_handle.output_adjust_);
-                    out[i + 1]
-                        = f2s24(fout[i + 1] * audio_handle.output_adjust_);
-                }
-                break;
-            case SaiHandle::Config::BitDepth::SAI_32BIT:
-                for(size_t i = 0; i < size; i += 2)
-                {
-                    out[i] = f2s32(fout[i] * audio_handle.output_adjust_);
-                    out[i + 1]
-                        = f2s32(fout[i + 1] * audio_handle.output_adjust_);
-                }
-                break;
-            default: break;
-        }
-    }
-    else if(audio_handle.callback_)
+    // if(audio_handle.interleaved_callback_)
+    // {
+    //     InterleavingAudioCallback cb
+    //         = (InterleavingAudioCallback)audio_handle.interleaved_callback_;
+    //     float fin[size];
+    //     float fout[size];
+    //     // There _must_ be a more elegant way to do this....
+    //     // Convert from int to float
+    //     switch(bd)
+    //     {
+    //         case SaiHandle::Config::BitDepth::SAI_16BIT:
+    //             for(size_t i = 0; i < size; i += 2)
+    //             {
+    //                 fin[i] = s162f(in[i]) * audio_handle.postgain_recip_;
+    //                 fin[i + 1]
+    //                     = s162f(in[i + 1]) * audio_handle.postgain_recip_;
+    //             }
+    //             break;
+    //         case SaiHandle::Config::BitDepth::SAI_24BIT:
+    //             for(size_t i = 0; i < size; i += 2)
+    //             {
+    //                 fin[i] = s242f(in[i]) * audio_handle.postgain_recip_;
+    //                 fin[i + 1]
+    //                     = s242f(in[i + 1]) * audio_handle.postgain_recip_;
+    //             }
+    //             break;
+    //         case SaiHandle::Config::BitDepth::SAI_32BIT:
+    //             for(size_t i = 0; i < size; i += 2)
+    //             {
+    //                 fin[i] = s322f(in[i]) * audio_handle.postgain_recip_;
+    //                 fin[i + 1]
+    //                     = s322f(in[i + 1]) * audio_handle.postgain_recip_;
+    //             }
+    //             break;
+    //         default: break;
+    //     }
+    //     cb(fin, fout, size);
+    //     switch(bd)
+    //     {
+    //         case SaiHandle::Config::BitDepth::SAI_16BIT:
+    //             for(size_t i = 0; i < size; i += 2)
+    //             {
+    //                 out[i] = f2s16(fout[i] * audio_handle.output_adjust_);
+    //                 out[i + 1]
+    //                     = f2s16(fout[i + 1] * audio_handle.output_adjust_);
+    //             }
+    //             break;
+    //         case SaiHandle::Config::BitDepth::SAI_24BIT:
+    //             for(size_t i = 0; i < size; i += 2)
+    //             {
+    //                 out[i] = f2s24(fout[i] * audio_handle.output_adjust_);
+    //                 out[i + 1]
+    //                     = f2s24(fout[i + 1] * audio_handle.output_adjust_);
+    //             }
+    //             break;
+    //         case SaiHandle::Config::BitDepth::SAI_32BIT:
+    //             for(size_t i = 0; i < size; i += 2)
+    //             {
+    //                 out[i] = f2s32(fout[i] * audio_handle.output_adjust_);
+    //                 out[i + 1]
+    //                     = f2s32(fout[i + 1] * audio_handle.output_adjust_);
+    //             }
+    //             break;
+    //         default: break;
+    //     }
+    // }
+    // else
+    if(audio_handle.callback_)
     {
         AudioCallback cb = (AudioCallback)audio_handle.callback_;
         // offset needed for 2nd audio codec.
-        size_t offset    = audio_handle.sai2_.GetOffset();
-        size_t buff_size = chns > 2 ? size * 2 : size;
+        // size_t offset    = audio_handle.sai2_.GetOffset();
+        size_t buff_size = size;
         float  finbuff[buff_size], foutbuff[buff_size];
         float* fin[chns];
         float* fout[chns];
@@ -361,123 +363,136 @@ void AudioHandle::Impl::InternalCallback(int32_t* in, int32_t* out, size_t size)
         fin[1]  = finbuff + (buff_size / chns);
         fout[0] = foutbuff;
         fout[1] = foutbuff + (buff_size / chns);
-        if(chns > 2)
-        {
-            fin[2]  = fin[1] + (buff_size / chns);
-            fin[3]  = fin[2] + (buff_size / chns);
-            fout[2] = fout[1] + (buff_size / chns);
-            fout[3] = fout[2] + (buff_size / chns);
-        }
+        // if(chns > 2)
+        // {
+        //     fin[2]  = fin[1] + (buff_size / chns);
+        //     fin[3]  = fin[2] + (buff_size / chns);
+        //     fout[2] = fout[1] + (buff_size / chns);
+        //     fout[3] = fout[2] + (buff_size / chns);
+        // }
         // Deinterleave and scale
-        switch(bd)
+        // NOTE: this has been modified to reduce code size, only 24bit option is available
+        //       – original code commented out below
+        for(size_t i = 0; i < size; i += 2)
         {
-            case SaiHandle::Config::BitDepth::SAI_16BIT:
-                for(size_t i = 0; i < size; i += 2)
-                {
-                    fin[0][i / 2] = s162f(in[i]) * audio_handle.postgain_recip_;
-                    fin[1][i / 2]
-                        = s162f(in[i + 1]) * audio_handle.postgain_recip_;
-                    if(chns > 2)
-                    {
-                        fin[2][i / 2]
-                            = s162f(audio_handle.buff_rx_[1][offset + i])
-                              * audio_handle.postgain_recip_;
-                        fin[3][i / 2]
-                            = s162f(audio_handle.buff_rx_[1][offset + i + 1])
-                              * audio_handle.postgain_recip_;
-                    }
-                }
-                break;
-            case SaiHandle::Config::BitDepth::SAI_24BIT:
-                for(size_t i = 0; i < size; i += 2)
-                {
-                    fin[0][i / 2] = s242f(in[i]) * audio_handle.postgain_recip_;
-                    fin[1][i / 2]
-                        = s242f(in[i + 1]) * audio_handle.postgain_recip_;
-                    if(chns > 2)
-                    {
-                        fin[2][i / 2]
-                            = s242f(audio_handle.buff_rx_[1][offset + i])
-                              * audio_handle.postgain_recip_;
-                        fin[3][i / 2]
-                            = s242f(audio_handle.buff_rx_[1][offset + i + 1])
-                              * audio_handle.postgain_recip_;
-                    }
-                }
-                break;
-            case SaiHandle::Config::BitDepth::SAI_32BIT:
-                for(size_t i = 0; i < size; i += 2)
-                {
-                    fin[0][i / 2] = s322f(in[i]) * audio_handle.postgain_recip_;
-                    fin[1][i / 2]
-                        = s322f(in[i + 1]) * audio_handle.postgain_recip_;
-                    if(chns > 2)
-                    {
-                        fin[2][i / 2]
-                            = s322f(audio_handle.buff_rx_[1][offset + i])
-                              * audio_handle.postgain_recip_;
-                        fin[3][i / 2]
-                            = s322f(audio_handle.buff_rx_[1][offset + i + 1])
-                              * audio_handle.postgain_recip_;
-                    }
-                }
-                break;
-            default: break;
+            fin[0][i / 2] = s242f(in[i]) * audio_handle.postgain_recip_;
+            fin[1][i / 2] = s242f(in[i + 1]) * audio_handle.postgain_recip_;
         }
+        // switch(bd)
+        // {
+        //     // case SaiHandle::Config::BitDepth::SAI_16BIT:
+        //     //     for(size_t i = 0; i < size; i += 2)
+        //     //     {
+        //     //         fin[0][i / 2] = s162f(in[i]) * audio_handle.postgain_recip_;
+        //     //         fin[1][i / 2]
+        //     //             = s162f(in[i + 1]) * audio_handle.postgain_recip_;
+        //     //         // if(chns > 2)
+        //     //         // {
+        //     //         //     fin[2][i / 2]
+        //     //         //         = s162f(audio_handle.buff_rx_[1][offset + i])
+        //     //         //           * audio_handle.postgain_recip_;
+        //     //         //     fin[3][i / 2]
+        //     //         //         = s162f(audio_handle.buff_rx_[1][offset + i + 1])
+        //     //         //           * audio_handle.postgain_recip_;
+        //     //         // }
+        //     //     }
+        //     //     break;
+        //     // case SaiHandle::Config::BitDepth::SAI_24BIT:
+        //     for(size_t i = 0; i < size; i += 2)
+        //     {
+        //         fin[0][i / 2] = s242f(in[i]) * audio_handle.postgain_recip_;
+        //         fin[1][i / 2] = s242f(in[i + 1]) * audio_handle.postgain_recip_;
+        //         // if(chns > 2)
+        //         // {
+        //         //     fin[2][i / 2]
+        //         //         = s242f(audio_handle.buff_rx_[1][offset + i])
+        //         //           * audio_handle.postgain_recip_;
+        //         //     fin[3][i / 2]
+        //         //         = s242f(audio_handle.buff_rx_[1][offset + i + 1])
+        //         //           * audio_handle.postgain_recip_;
+        //         // }
+        //     }
+        //     break;
+        //     // case SaiHandle::Config::BitDepth::SAI_32BIT:
+        //     //     for(size_t i = 0; i < size; i += 2)
+        //     //     {
+        //     //         fin[0][i / 2] = s322f(in[i]) * audio_handle.postgain_recip_;
+        //     //         fin[1][i / 2]
+        //     //             = s322f(in[i + 1]) * audio_handle.postgain_recip_;
+        //     //         // if(chns > 2)
+        //     //         // {
+        //     //         //     fin[2][i / 2]
+        //     //         //         = s322f(audio_handle.buff_rx_[1][offset + i])
+        //     //         //           * audio_handle.postgain_recip_;
+        //     //         //     fin[3][i / 2]
+        //     //         //         = s322f(audio_handle.buff_rx_[1][offset + i + 1])
+        //     //         //           * audio_handle.postgain_recip_;
+        //     //         // }
+        //     //     }
+        //     //     break;
+        //     //     default: break;
+        //     // }
         cb(fin, fout, size / 2);
         // Reinterleave and scale
-        switch(bd)
+        // NOTE: this has been modified to reduce code size, only 24bit option is available
+        //       – original code commented out below
+        for(size_t i = 0; i < size; i += 2)
         {
-            case SaiHandle::Config::BitDepth::SAI_16BIT:
-                for(size_t i = 0; i < size; i += 2)
-                {
-                    out[i]
-                        = f2s16(fout[0][i / 2] * audio_handle.output_adjust_);
-                    out[i + 1]
-                        = f2s16(fout[1][i / 2] * audio_handle.output_adjust_);
-                    if(chns > 2)
-                    {
-                        audio_handle.buff_tx_[1][offset + i] = f2s16(
-                            fout[2][i / 2] * audio_handle.output_adjust_);
-                        audio_handle.buff_tx_[1][offset + i + 1] = f2s16(
-                            fout[3][i / 2] * audio_handle.output_adjust_);
-                    }
-                }
-                break;
-            case SaiHandle::Config::BitDepth::SAI_24BIT:
-                for(size_t i = 0; i < size; i += 2)
-                {
-                    out[i]
-                        = f2s24(fout[0][i / 2] * audio_handle.output_adjust_);
-                    out[i + 1]
-                        = f2s24(fout[1][i / 2] * audio_handle.output_adjust_);
-                    if(chns > 2)
-                    {
-                        audio_handle.buff_tx_[1][offset + i] = f2s24(
-                            fout[2][i / 2] * audio_handle.output_adjust_);
-                        audio_handle.buff_tx_[1][offset + i + 1] = f2s24(
-                            fout[3][i / 2] * audio_handle.output_adjust_);
-                    }
-                }
-                break;
-            case SaiHandle::Config::BitDepth::SAI_32BIT:
-                for(size_t i = 0; i < size; i += 2)
-                {
-                    out[i]
-                        = f2s32(fout[0][i / 2] * audio_handle.output_adjust_);
-                    out[i + 1]
-                        = f2s32(fout[1][i / 2] * audio_handle.output_adjust_);
-                    if(chns > 2)
-                    {
-                        audio_handle.buff_tx_[1][offset + i] = f2s32(
-                            fout[2][i / 2] * audio_handle.output_adjust_);
-                        audio_handle.buff_tx_[1][offset + i + 1] = f2s32(
-                            fout[3][i / 2] * audio_handle.output_adjust_);
-                    }
-                }
-                break;
-            default: break;
+            out[i]     = f2s24(fout[0][i / 2] * audio_handle.output_adjust_);
+            out[i + 1] = f2s24(fout[1][i / 2] * audio_handle.output_adjust_);
         }
+        // switch(bd)
+        // {
+        //     case SaiHandle::Config::BitDepth::SAI_16BIT:
+        //         for(size_t i = 0; i < size; i += 2)
+        //         {
+        //             out[i]
+        //                 = f2s16(fout[0][i / 2] * audio_handle.output_adjust_);
+        //             out[i + 1]
+        //                 = f2s16(fout[1][i / 2] * audio_handle.output_adjust_);
+        //             // if(chns > 2)
+        //             // {
+        //             //     audio_handle.buff_tx_[1][offset + i] = f2s16(
+        //             //         fout[2][i / 2] * audio_handle.output_adjust_);
+        //             //     audio_handle.buff_tx_[1][offset + i + 1] = f2s16(
+        //             //         fout[3][i / 2] * audio_handle.output_adjust_);
+        //             // }
+        //         }
+        //         break;
+        //     case SaiHandle::Config::BitDepth::SAI_24BIT:
+        //         for(size_t i = 0; i < size; i += 2)
+        //         {
+        //             out[i]
+        //                 = f2s24(fout[0][i / 2] * audio_handle.output_adjust_);
+        //             out[i + 1]
+        //                 = f2s24(fout[1][i / 2] * audio_handle.output_adjust_);
+        //             // if(chns > 2)
+        //             // {
+        //             //     audio_handle.buff_tx_[1][offset + i] = f2s24(
+        //             //         fout[2][i / 2] * audio_handle.output_adjust_);
+        //             //     audio_handle.buff_tx_[1][offset + i + 1] = f2s24(
+        //             //         fout[3][i / 2] * audio_handle.output_adjust_);
+        //             // }
+        //         }
+        //         break;
+        //     case SaiHandle::Config::BitDepth::SAI_32BIT:
+        //         for(size_t i = 0; i < size; i += 2)
+        //         {
+        //             out[i]
+        //                 = f2s32(fout[0][i / 2] * audio_handle.output_adjust_);
+        //             out[i + 1]
+        //                 = f2s32(fout[1][i / 2] * audio_handle.output_adjust_);
+        //             // if(chns > 2)
+        //             // {
+        //             //     audio_handle.buff_tx_[1][offset + i] = f2s32(
+        //             //         fout[2][i / 2] * audio_handle.output_adjust_);
+        //             //     audio_handle.buff_tx_[1][offset + i + 1] = f2s32(
+        //             //         fout[3][i / 2] * audio_handle.output_adjust_);
+        //             // }
+        //         }
+        //         break;
+        //     default: break;
+        // }
     }
 }
 
